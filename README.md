@@ -5,6 +5,18 @@ Organizador de medicamentos y suplementos para personas y mascotas, hecho en
 
 **Español / English · Tema oscuro / claro · Tamaño de texto ajustable**
 
+La **beta 2 es una versión de diagnóstico** para investigar un fallo persistente
+de «Ver detalles» reportado en Linux. La causa todavía no está confirmada.
+Si vuelve a ocurrir, usá **Copiar diagnóstico** en el mensaje y pegá ese texto
+en el reporte. No contiene nombres, productos, dosis, notas, rutas personales,
+mensajes completos de excepciones ni valores de variables. No se guarda en un
+archivo ni se envía por Internet; solo se copia al portapapeles cuando lo pedís.
+
+Para probarla, cerrá MediLocal, extraé el ZIP nuevo en **otra carpeta** y abrí
+el nuevo ejecutable. Los perfiles y preferencias se conservan en la carpeta
+del usuario; no borres ni reemplaces esa carpeta. Podés exportar una copia desde
+la beta anterior antes de probar. No hace falta compartir tu base de datos.
+
 ## Descargar y abrir
 
 [Versiones y descargas de MediLocal](https://github.com/MartnMartnez14/medilocal/releases)
@@ -132,6 +144,13 @@ estable requiere validación manual adicional; el flujo no la declara estable.
 - Evaluar cifrado y cualquier sincronización antes de cambiar el modelo de privacidad.
 
 ## English
+
+**Beta 2 is a diagnostic build**, not a confirmed fix for the reported Linux
+details-dialog issue. If it happens again, click **Copy diagnostic** and include
+that text in your report. It excludes personal entries, paths, full exception
+messages and local variables. Nothing is written to a diagnostic file or sent
+over the network. Close MediLocal and extract the new ZIP into a separate folder;
+existing profiles and preferences remain in the OS user's data directory.
 
 MediLocal is an offline desktop medication and supplement organizer for people
 and pets. It offers **English/Spanish, light/dark themes and adjustable text**, with

@@ -1,10 +1,12 @@
 """Native desktop UI. No browser, network connection or third-party runtime package."""
 import sqlite3
+from contextlib import contextmanager
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, ttk
 
 from .i18n import tr
+from .diagnostics import report
 from .paths import legacy_candidates, load_settings, save_settings
 from .store import DataError
 from .validation import ValidationError
@@ -23,6 +25,10 @@ class App:
         self.screen = "profiles"
         self.search = tk.StringVar()
         self.status = tk.StringVar()
+        self.dialog_windows = set()
+        self.error_window = None
+        self.last_diagnostic = ""
+        self.reporting_error = False
         self.style = ttk.Style(root)
         self.style.theme_use("clam")
         root.title("MediLocal")
@@ -42,7 +48,7 @@ class App:
     def t(self, key, **kw):
         return tr(key, self.settings["language"], **kw)
 
-    def run_action(self, action):
+    def run_action(self, action, context="callback"):
         try:
             return action()
         except ValidationError as error:
@@ -51,11 +57,87 @@ class App:
             messagebox.showerror(self.t("error"), self.t(str(error)), parent=self.root)
         except (sqlite3.Error, OSError):
             messagebox.showerror(self.t("error"), self.t("storage_error"), parent=self.root)
+        except Exception as error:
+            self.show_diagnostic(error, context)
 
     def callback_error(self, exc, value, traceback):
-        # Deliberately do not log exception values or user-provided data.
-        key = "storage_error" if issubclass(exc, (OSError, sqlite3.Error)) else "unexpected_error"
-        messagebox.showerror(self.t("error"), self.t(key), parent=self.root)
+        self.show_diagnostic(value)
+
+    def close_dialog(self, window):
+        self.dialog_windows.discard(window)
+        try:
+            if window.winfo_exists():
+                if window.grab_current() is window:
+                    window.grab_release()
+                window.destroy()
+            self.root.focus_set()
+        except tk.TclError:
+            pass
+
+    def show_diagnostic(self, error, context="callback"):
+        if self.reporting_error:
+            return
+        self.reporting_error = True
+        try:
+            self.display_diagnostic(error, context)
+        except tk.TclError:
+            if self.error_window is not None:
+                self.close_dialog(self.error_window)
+            messagebox.showerror(self.t("error"), self.t("unexpected_error") + "\n\n" + self.last_diagnostic, parent=self.root)
+        finally:
+            self.reporting_error = False
+
+    def display_diagnostic(self, error, context):
+        # This path intentionally does not reuse the ordinary modal-dialog helper.
+        for window in tuple(self.dialog_windows):
+            window.diagnostic_closed = True
+            self.close_dialog(window)
+        self.last_diagnostic = report(error, context, self.settings,
+                                      str(self.root.tk.call("package", "provide", "Tk")),
+                                      str(self.root.tk.call("info", "patchlevel")))
+        if self.error_window is not None and self.error_window.winfo_exists():
+            self.error_window.destroy()
+        window = tk.Toplevel(self.root)
+        self.error_window = window
+        window.withdraw()
+        window.title(self.t("error"))
+        window.transient(self.root)
+        window.geometry("700x590")
+        window.minsize(500, 400)
+        c = PALETTES[self.settings["theme"]]
+        window.configure(background=c["bg"])
+        body = ttk.Frame(window, padding=16)
+        body.pack(fill="both", expand=True)
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(2, weight=1)
+        ttk.Label(body, text=self.t("error"), style="Title.TLabel", wraplength=620).grid(row=0, column=0, columnspan=2, sticky="w")
+        explanation = ttk.Label(body, text=self.t("diagnostic_info"), wraplength=620)
+        explanation.grid(row=1, column=0, columnspan=2, sticky="ew", pady=10)
+        text = tk.Text(body, wrap="word", font="TkTextFont", background=c["field"], foreground=c["fg"], insertbackground=c["fg"], selectbackground=c["selected"], selectforeground="#FFFFFF", width=40, height=10)
+        text.insert("1.0", self.last_diagnostic)
+        text.configure(state="disabled")
+        text.grid(row=2, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(body, command=text.yview)
+        scroll.grid(row=2, column=1, sticky="ns")
+        text.configure(yscrollcommand=scroll.set)
+        status = tk.StringVar()
+        ttk.Label(body, textvariable=status, wraplength=620).grid(row=3, column=0, sticky="w", pady=8)
+        def copy():
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(text.get("1.0", "end-1c"))
+                status.set(self.t("diagnostic_copied"))
+            except tk.TclError:
+                status.set(self.t("copy_failed"))
+        actions = ttk.Frame(body)
+        actions.grid(row=4, column=0, sticky="ew")
+        copy_button = ttk.Button(actions, text=self.t("copy_diagnostic"), command=copy)
+        copy_button.pack(side="left", padx=(0, 10))
+        ttk.Button(actions, text=self.t("close"), command=window.destroy).pack(side="left")
+        window.bind("<Escape>", lambda e: window.destroy())
+        window.bind("<Configure>", lambda e: explanation.configure(wraplength=max(100, body.winfo_width()-32)) if e.widget is window else None)
+        window.deiconify()
+        copy_button.focus_set()
 
     def apply_theme(self):
         c = PALETTES[self.settings["theme"]]
@@ -83,7 +165,7 @@ class App:
         self.style.map("Treeview", background=[("selected", c["selected"])], foreground=[("selected", "#FFFFFF")])
 
     def button(self, parent, key, command, primary=False):
-        return ttk.Button(parent, text=self.t(key), command=lambda: self.run_action(command), style="Primary.TButton" if primary else "TButton")
+        return ttk.Button(parent, text=self.t(key), command=lambda: self.run_action(command, key), style="Primary.TButton" if primary else "TButton")
 
     def build(self):
         for child in self.root.winfo_children():
@@ -201,8 +283,8 @@ class App:
         horizontal.grid(row=1, column=0, sticky="ew")
         self.tree.configure(yscrollcommand=scroll.set, xscrollcommand=horizontal.set)
         command = self.open_selected if profile is None else self.product_details
-        self.tree.bind("<Double-1>", lambda e: self.run_action(command))
-        self.tree.bind("<Return>", lambda e: self.run_action(command))
+        self.tree.bind("<Double-1>", lambda e: self.run_action(command, "open_profile" if profile is None else "details"))
+        self.tree.bind("<Return>", lambda e: self.run_action(command, "open_profile" if profile is None else "details"))
         self.refresh()
 
     def current_profile(self):
@@ -260,93 +342,111 @@ class App:
             self.refresh()
             self.status.set(self.t("deleted"))
 
+    @contextmanager
     def dialog(self, title):
         window = tk.Toplevel(self.root)
-        window.title(self.t(title))
-        window.transient(self.root)
-        window.geometry("660x610")
-        window.minsize(500, 400)
-        window.configure(background=PALETTES[self.settings["theme"]]["bg"])
-        window.grab_set()
-        window.bind("<Escape>", lambda e: window.destroy())
-        # Scrollable forms keep every field/action reachable with enlarged text.
-        canvas = tk.Canvas(window, highlightthickness=0, background=PALETTES[self.settings["theme"]]["bg"])
-        scroll = ttk.Scrollbar(window, orient="vertical", command=canvas.yview)
-        scroll.pack(side="right", fill="y")
-        canvas.pack(fill="both", expand=True)
-        canvas.configure(yscrollcommand=scroll.set)
-        body = ttk.Frame(canvas, padding=20)
-        body.columnconfigure(0, weight=1)
-        item = canvas.create_window(0, 0, window=body, anchor="nw")
-        def body_changed(event):
-            for child in body.winfo_children():
-                if isinstance(child, ttk.Label):
-                    child.configure(wraplength=max(100, body.winfo_width()-40))
-            canvas.configure(scrollregion=canvas.bbox("all"))
-        body.bind("<Configure>", body_changed)
-        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(item, width=e.width))
-        def reveal(event):
-            window.update_idletasks()
-            widget = event.widget
-            if widget is body or not str(widget).startswith(str(body)):
+        try:
+            window.withdraw()
+            self.dialog_windows.add(window)
+            window.title(self.t(title))
+            window.transient(self.root)
+            window.geometry("660x610")
+            window.minsize(500, 400)
+            window.configure(background=PALETTES[self.settings["theme"]]["bg"])
+            window.bind("<Escape>", lambda e: self.close_dialog(window))
+            window.protocol("WM_DELETE_WINDOW", lambda: self.close_dialog(window))
+            window.bind("<Destroy>", lambda e: self.dialog_windows.discard(window) if e.widget is window else None)
+            # Scrollable forms keep every field/action reachable with enlarged text.
+            canvas = tk.Canvas(window, highlightthickness=0, background=PALETTES[self.settings["theme"]]["bg"])
+            scroll = ttk.Scrollbar(window, orient="vertical", command=canvas.yview)
+            scroll.pack(side="right", fill="y")
+            canvas.pack(fill="both", expand=True)
+            canvas.configure(yscrollcommand=scroll.set)
+            body = ttk.Frame(canvas, padding=20)
+            body.columnconfigure(0, weight=1)
+            item = canvas.create_window(0, 0, window=body, anchor="nw")
+            def body_changed(event):
+                for child in body.winfo_children():
+                    if isinstance(child, ttk.Label):
+                        child.configure(wraplength=max(100, body.winfo_width()-40))
+                canvas.configure(scrollregion=canvas.bbox("all"))
+            body.bind("<Configure>", body_changed)
+            canvas.bind("<Configure>", lambda e: canvas.itemconfigure(item, width=e.width))
+            def reveal(event):
+                window.update_idletasks()
+                widget = event.widget
+                if widget is body or not str(widget).startswith(str(body)):
+                    return
+                top = widget.winfo_rooty() - body.winfo_rooty()
+                height = max(body.winfo_height(), 1)
+                visible_top = canvas.canvasy(0)
+                if top < visible_top or top + widget.winfo_height() > visible_top + canvas.winfo_height():
+                    canvas.yview_moveto(max(0, top - 20) / height)
+            window.bind("<FocusIn>", reveal, add="+")
+            yield window, body
+            if getattr(window, "diagnostic_closed", False):
                 return
-            top = widget.winfo_rooty() - body.winfo_rooty()
-            height = max(body.winfo_height(), 1)
-            visible_top = canvas.canvasy(0)
-            if top < visible_top or top + widget.winfo_height() > visible_top + canvas.winfo_height():
-                canvas.yview_moveto(max(0, top - 20) / height)
-        window.bind("<FocusIn>", reveal, add="+")
-        return window, body
+            window.deiconify()
+            window.wait_visibility()
+            window.grab_set()
+            focus = getattr(window, "initial_focus", None)
+            if focus is not None:
+                focus.focus_set()
+
+        except Exception:
+            self.close_dialog(window)
+            if not getattr(window, "diagnostic_closed", False):
+                raise
 
     def form(self, title, fields, initial, submit, warning=""):
-        window, body = self.dialog(title)
-        variables, errors, widgets = {}, {}, {}
-        rownum = 0
-        if warning:
-            ttk.Label(body, text=warning, style="Error.TLabel", wraplength=560).grid(row=rownum, column=0, sticky="ew", pady=(0, 12))
-            rownum += 1
-        for key, choices in fields:
-            ttk.Label(body, text=self.t(key)).grid(row=rownum, column=0, sticky="w", pady=(8, 2))
-            rownum += 1
-            variables[key] = tk.StringVar(value=initial.get(key, ""))
-            if choices:
-                widget = ttk.Combobox(body, values=[self.t(v) for v in choices], state="readonly", textvariable=variables[key])
-                widget.current(choices.index(initial.get(key, choices[0])))
-            elif key == "notas":
-                c = PALETTES[self.settings["theme"]]
-                widget = tk.Text(body, height=4, width=30, wrap="word", font="TkTextFont", background=c["field"], foreground=c["fg"], insertbackground=c["fg"], selectbackground=c["selected"], selectforeground="#FFFFFF", highlightbackground=c["border"], highlightcolor=c["accent"], highlightthickness=2, relief="flat", padx=6, pady=6)
-                widget.insert("1.0", initial.get(key, ""))
-                def move_focus(event):
-                    (event.widget.tk_focusPrev() if event.state & 1 else event.widget.tk_focusNext()).focus_set()
-                    return "break"
-                widget.bind("<Tab>", move_focus)
-                widget.bind("<ISO_Left_Tab>", lambda e: (e.widget.tk_focusPrev().focus_set(), "break")[1])
-            else:
-                widget = ttk.Entry(body, textvariable=variables[key])
-            widgets[key] = widget
-            widget.grid(row=rownum, column=0, sticky="ew")
-            rownum += 1
-            errors[key] = tk.StringVar()
-            ttk.Label(body, textvariable=errors[key], style="Error.TLabel", wraplength=560).grid(row=rownum, column=0, sticky="w")
-            rownum += 1
-        def save():
-            for var in errors.values():
-                var.set("")
-            values = {key: (choices[widgets[key].current()] if choices else widgets[key].get("1.0", "end-1c") if key == "notas" else variables[key].get()) for key, choices in fields}
-            try:
-                submit(values)
-            except ValidationError as error:
-                errors[error.field].set(self.t(error.key))
-                widgets[error.field].focus_set()
-                return
-            window.destroy()
-            self.refresh()
-            self.status.set(self.t("saved"))
-        actions = ttk.Frame(body)
-        actions.grid(row=rownum, column=0, sticky="w", pady=15)
-        self.button(actions, "save", save, True).pack(side="left", padx=(0, 10))
-        self.button(actions, "cancel", window.destroy).pack(side="left")
-        widgets[fields[0][0]].focus_set()
+        with self.dialog(title) as (window, body):
+            variables, errors, widgets = {}, {}, {}
+            rownum = 0
+            if warning:
+                ttk.Label(body, text=warning, style="Error.TLabel", wraplength=560).grid(row=rownum, column=0, sticky="ew", pady=(0, 12))
+                rownum += 1
+            for key, choices in fields:
+                ttk.Label(body, text=self.t(key)).grid(row=rownum, column=0, sticky="w", pady=(8, 2))
+                rownum += 1
+                variables[key] = tk.StringVar(value=initial.get(key, ""))
+                if choices:
+                    widget = ttk.Combobox(body, values=[self.t(v) for v in choices], state="readonly", textvariable=variables[key])
+                    widget.current(choices.index(initial.get(key, choices[0])))
+                elif key == "notas":
+                    c = PALETTES[self.settings["theme"]]
+                    widget = tk.Text(body, height=4, width=30, wrap="word", font="TkTextFont", background=c["field"], foreground=c["fg"], insertbackground=c["fg"], selectbackground=c["selected"], selectforeground="#FFFFFF", highlightbackground=c["border"], highlightcolor=c["accent"], highlightthickness=2, relief="flat", padx=6, pady=6)
+                    widget.insert("1.0", initial.get(key, ""))
+                    def move_focus(event):
+                        (event.widget.tk_focusPrev() if event.state & 1 else event.widget.tk_focusNext()).focus_set()
+                        return "break"
+                    widget.bind("<Tab>", move_focus)
+                    widget.bind("<ISO_Left_Tab>", lambda e: (e.widget.tk_focusPrev().focus_set(), "break")[1])
+                else:
+                    widget = ttk.Entry(body, textvariable=variables[key])
+                widgets[key] = widget
+                widget.grid(row=rownum, column=0, sticky="ew")
+                rownum += 1
+                errors[key] = tk.StringVar()
+                ttk.Label(body, textvariable=errors[key], style="Error.TLabel", wraplength=560).grid(row=rownum, column=0, sticky="w")
+                rownum += 1
+            def save():
+                for var in errors.values():
+                    var.set("")
+                values = {key: (choices[widgets[key].current()] if choices else widgets[key].get("1.0", "end-1c") if key == "notas" else variables[key].get()) for key, choices in fields}
+                try:
+                    submit(values)
+                except ValidationError as error:
+                    errors[error.field].set(self.t(error.key))
+                    widgets[error.field].focus_set()
+                    return
+                window.destroy()
+                self.refresh()
+                self.status.set(self.t("saved"))
+            actions = ttk.Frame(body)
+            actions.grid(row=rownum, column=0, sticky="w", pady=15)
+            self.button(actions, "save", save, True).pack(side="left", padx=(0, 10))
+            self.button(actions, "cancel", window.destroy).pack(side="left")
+            window.initial_focus = widgets[fields[0][0]]
 
     def profile_form(self, row=None):
         row = row or {}
@@ -364,16 +464,16 @@ class App:
         row = self.selected()
         if not row:
             return
-        window, body = self.dialog("details")
-        for key in ("nombre", "tipo", "cantidad", "hours_column", "notas"):
-            value = row.get(key, "")
-            if key == "tipo":
-                value = self.t(value)
-            if key == "hours_column":
-                value = self.t("legacy_warning", hour=row["hora_original"]) if row["hora_original"] is not None else ", ".join(row["horarios"])
-            ttk.Label(body, text=self.t(key)).pack(anchor="w", pady=(10, 0))
-            ttk.Label(body, text=value, wraplength=560).pack(anchor="w")
-        self.button(body, "close", window.destroy).pack(anchor="w", pady=20)
+        with self.dialog("details") as (window, body):
+            for key in ("nombre", "tipo", "cantidad", "hours_column", "notas"):
+                value = row.get(key, "")
+                if key == "tipo":
+                    value = self.t(value)
+                if key == "hours_column":
+                    value = self.t("legacy_warning", hour=row["hora_original"]) if row["hora_original"] is not None else ", ".join(row["horarios"])
+                ttk.Label(body, text=self.t(key)).pack(anchor="w", pady=(10, 0))
+                ttk.Label(body, text=value, wraplength=560).pack(anchor="w")
+            self.button(body, "close", window.destroy).pack(anchor="w", pady=20)
 
     def backup_screen(self):
         ttk.Label(self.content, text=self.t("backups"), style="Title.TLabel").grid(row=0, column=0, sticky="w", pady=12)
