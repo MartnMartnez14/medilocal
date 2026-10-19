@@ -135,7 +135,12 @@ class App:
         copy_button.pack(side="left", padx=(0, 10))
         ttk.Button(actions, text=self.t("close"), command=window.destroy).pack(side="left")
         window.bind("<Escape>", lambda e: window.destroy())
-        window.bind("<Configure>", lambda e: explanation.configure(wraplength=max(100, body.winfo_width()-32)) if e.widget is window else None)
+        def resize_labels(event):
+            width = max(200, body.winfo_width()-32)
+            for child in body.winfo_children():
+                if isinstance(child, ttk.Label):
+                    child.configure(wraplength=width)
+        body.bind("<Configure>", resize_labels)
         window.deiconify()
         copy_button.focus_set()
 
