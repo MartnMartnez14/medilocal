@@ -1,0 +1,89 @@
+name: Desktop checks and preview packages
+
+on:
+  push:
+    branches: [main, 'codex/**']
+    tags: ['v2.*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux-x64
+          - os: windows-2022
+            platform: windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Linux display dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb python3-tk
+      - name: Data and terminal tests
+        run: python -m unittest discover -v
+      - name: Native UI tests (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a env MEDILOCAL_GUI_TESTS=1 python -m unittest tests.test_gui -v
+      - name: Native UI tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:MEDILOCAL_GUI_TESTS = '1'
+          python -m unittest tests.test_gui -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install packaging tools
+        run: python -m pip install -r requirements-build.txt
+      - name: Build desktop application
+        run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name MediLocal app.py
+      - name: Check packaged executable (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a dist/MediLocal/MediLocal --smoke-test
+      - name: Check packaged executable (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath dist/MediLocal/MediLocal.exe -ArgumentList '--smoke-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
+      - name: Assemble distribution
+        shell: python
+        run: |
+          import hashlib, pathlib, shutil
+          bundle = pathlib.Path('dist/MediLocal')
+          for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md', 'README.md'):
+              shutil.copy(name, bundle / name)
+          archive = pathlib.Path(shutil.make_archive('MediLocal-${{ matrix.platform }}', 'zip', 'dist', 'MediLocal'))
+          pathlib.Path(str(archive) + '.sha256').write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MediLocal-${{ matrix.platform }}
+          path: |
+            MediLocal-*.zip
+            MediLocal-*.sha256
+
+  prerelease:
+    if: startsWith(github.ref, 'refs/tags/v2.')
+    needs: desktop
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: MediLocal-*
+          path: packages
+          merge-multiple: true
+      - name: Publish preliminary release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" packages/* --prerelease --title "MediLocal $GITHUB_REF_NAME" --notes-file docs/RELEASE_NOTES.md
