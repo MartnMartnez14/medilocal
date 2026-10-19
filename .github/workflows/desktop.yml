@@ -54,6 +54,12 @@ jobs:
         run: |
           $process = Start-Process -FilePath dist/MediLocal/MediLocal.exe -ArgumentList '--smoke-test' -Wait -PassThru
           if ($process.ExitCode -ne 0) { exit $process.ExitCode }
+      - name: Retain runtime licenses (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python scripts/collect_licenses.py dist/MediLocal
+      - name: Retain runtime licenses (Windows)
+        if: runner.os == 'Windows'
+        run: python scripts/collect_licenses.py dist/MediLocal
       - name: Assemble distribution
         shell: python
         run: |

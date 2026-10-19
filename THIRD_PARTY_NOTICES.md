@@ -3,7 +3,8 @@
 MediLocal source code is MIT licensed. It uses Python's standard library only;
 there are no application pip dependencies, online fonts, analytics or network APIs.
 Packaged distributions include their own Python/Tcl/Tk runtime and relevant
-license files collected by PyInstaller. These components retain their own licenses:
+license texts in `licenses/`, collected during the build for the runtime versions
+actually used. These components retain their own licenses:
 
 - Python: [PSF License Agreement and history](https://docs.python.org/3/license.html).
 - Tcl/Tk: [Tcl/Tk license terms](https://www.tcl-lang.org/software/tcltk/license.html), permissive BSD-style licenses.
