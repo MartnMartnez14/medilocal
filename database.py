@@ -1,47 +1,22 @@
+"""Compatibility entry points. Data now lives in the OS user's application folder."""
 import sqlite3
-from pathlib import Path
 
+from medilocal.paths import data_dir
+from medilocal.store import Store
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "data" / "medilocal.db"
+DB_PATH = data_dir() / "medilocal.db"
 
 
 def conectar():
-    """Conecta con la base de datos local."""
-    return sqlite3.connect(DB_PATH)
+    Store(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA trusted_schema=OFF")
+    return conn
 
 
 def crear_base_datos():
-    """Crea las tablas necesarias."""
-
-    conexion = conectar()
-    cursor = conexion.cursor()
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS perfiles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre TEXT NOT NULL,
-            tipo TEXT NOT NULL
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS productos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            perfil_id INTEGER NOT NULL,
-            tipo TEXT NOT NULL,
-            nombre TEXT NOT NULL,
-            cantidad TEXT NOT NULL,
-            hora TEXT NOT NULL,
-            notas TEXT,
-            FOREIGN KEY (perfil_id) REFERENCES perfiles(id)
-        )
-    """)
-
-    conexion.commit()
-    conexion.close()
-
-    print("✓ Base de datos preparada correctamente.")
+    Store(DB_PATH)
 
 
 if __name__ == "__main__":
