@@ -73,6 +73,10 @@ STRINGS = {
     "terminal_backups": ("1. Exportar  2. Restaurar  3. Importar base antigua  0. Volver", "1. Export  2. Restore  3. Import old database  0. Back"),
     "startup_error": ("No se pudo abrir MediLocal. Revisá que la carpeta de datos sea accesible y la base compatible. La base anterior no se migra automáticamente.", "MediLocal could not be opened. Check that the data folder is accessible and the database is compatible. Old databases are not migrated automatically."),
     "single_instance": ("MediLocal ya está abierto, o la carpeta de datos está siendo utilizada. Cerrá la otra instancia antes de continuar.", "MediLocal is already open, or its data folder is in use. Close the other instance before continuing."),
+    "diagnostic_info": ("La ventana que falló se cerró. Podés copiar el diagnóstico técnico para reportarlo. No contiene tus registros ni rutas personales y no se envía por Internet.", "The failed window was closed. You can copy the technical diagnostic to report it. It contains no entries or personal paths and is not sent over the Internet."),
+    "copy_diagnostic": ("Copiar diagnóstico", "Copy diagnostic"),
+    "diagnostic_copied": ("Diagnóstico copiado. Podés pegarlo en el chat.", "Diagnostic copied. You can paste it into the chat."),
+    "copy_failed": ("No se pudo copiar. Podés seleccionar el texto y copiarlo manualmente.", "Unable to copy. You can select the text and copy it manually."),
 }
 
 

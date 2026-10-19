@@ -19,6 +19,15 @@ como datos a un esquema conocido: no se ejecutan disparadores ni vistas importad
 Una restauración valida primero la copia, crea un respaldo del estado actual y
 reemplaza el archivo completo. No sustituye una política de copias externas.
 
+La beta 2 permite copiar un diagnóstico técnico desde el mensaje de error. Usa
+una lista de campos permitidos: versión de la aplicación, plataforma, versiones
+de Python/SQLite/Tcl/Tk, idioma, tema, tamaño del texto, tipo de excepción y hasta
+12 funciones y números de línea de módulos conocidos. Algunas excepciones incluyen
+una categoría técnica o una clave de esquema de una lista fija. Nunca se incluyen
+mensajes completos, rutas personales, líneas de código ni variables locales.
+El diagnóstico permanece en memoria y solo se copia al portapapeles por acción
+explícita. No se crea un archivo ni se transmite por red.
+
 ## English
 
 The database and backups are **not encrypted**. All profiles are accessible to

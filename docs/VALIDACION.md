@@ -1,8 +1,16 @@
-# Validación — MediLocal 2.0.0b1
+# Validación — MediLocal 2.0.0b2 (diagnóstico)
 
 Fecha de referencia: 19 de octubre de 2026. Todas las pruebas y capturas usan
 perfiles y productos ficticios. La base antigua del equipo no fue importada ni
 modificada para desarrollar o verificar esta versión.
+
+## Estado del fallo reportado
+
+El usuario confirmó un fallo persistente al abrir «Ver detalles» en Linux, con
+«Editar registro» funcionando. Se reprodujo su secuencia con datos ficticios desde
+el código y desde el ejecutable público de la beta 1, sin obtener el error.
+La causa sigue sin confirmar. La beta 2 no debe anunciarse como una solución
+confirmada: incorpora diagnóstico seguro y recuperación de ventanas incompletas.
 
 ## Evidencia local
 
@@ -24,12 +32,20 @@ modificada para desarrollar o verificar esta versión.
   `.gitignore`; no contiene bases SQLite. La publicación se hace con una lista explícita
   de fuentes, documentación, pruebas y capturas ficticias.
 
+La beta 2 agrega cuatro pruebas de privacidad del diagnóstico y dos de ventanas:
+fallo sintético con recuperación y copia al portapapeles, y recorrido real de los
+botones, Enter y doble clic sobre un suplemento en los dos idiomas y temas.
+El fallo sintético no representa una reproducción de la causa del caso reportado.
+El total local es 39 pruebas: 32 sin ventanas y 7 de GUI.
+
 ## Construcción y publicación
 
 El flujo `desktop.yml` ejecuta pruebas, construye una carpeta autónoma con
 PyInstaller en Ubuntu 22.04 x64 y Windows Server 2022 x64, y ejecuta el binario
-resultante con `--smoke-test`. Esa opción usa una carpeta temporal y verifica
-datos, respaldo/restauración y ventanas en los dos idiomas y temas.
+resultante con `--smoke-test`. Esa opción usa una carpeta temporal, crea un
+suplemento desde el formulario, verifica respaldo/restauración, reabre la base y
+abre detalles mediante botón, Enter y doble clic, además de la edición, en ambos
+idiomas y temas. Comprueba contenido visible y ausencia de diagnósticos inesperados.
 
 Los ZIP incluyen ejecutable, `_internal`, README y avisos de licencias. Se genera
 un SHA-256 para cada ZIP. Las versiones etiquetadas `v2.*` se publican como
