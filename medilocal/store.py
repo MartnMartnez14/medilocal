@@ -184,7 +184,7 @@ class Store:
         fd, name = tempfile.mkstemp(prefix=".medilocal-", suffix=".tmp", dir=destination.parent)
         os.close(fd)
         try:
-            with connect(self.path, True) as source, sqlite3.connect(name) as target:
+            with connect(self.path, True) as source, connect(name) as target:
                 source.backup(target)
             check_source(name)
             private_file(name)

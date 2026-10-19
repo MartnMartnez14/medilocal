@@ -3,6 +3,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,7 +15,7 @@ from medilocal.validation import ValidationError, times
 
 
 def legacy(path, hour="08:00", orphan=False):
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn, conn:
         conn.executescript("""
         CREATE TABLE perfiles(id INTEGER PRIMARY KEY AUTOINCREMENT,nombre TEXT NOT NULL,tipo TEXT NOT NULL);
         CREATE TABLE productos(id INTEGER PRIMARY KEY AUTOINCREMENT,perfil_id INTEGER NOT NULL,tipo TEXT NOT NULL,nombre TEXT NOT NULL,cantidad TEXT NOT NULL,hora TEXT NOT NULL,notas TEXT,FOREIGN KEY(perfil_id) REFERENCES perfiles(id));
@@ -117,7 +118,7 @@ class StoreTests(unittest.TestCase):
     def test_reject_version(self):
         source = self.directory / "future.db"
         self.store.backup(source)
-        with sqlite3.connect(source) as conn:
+        with closing(sqlite3.connect(source)) as conn, conn:
             conn.execute("PRAGMA user_version=999")
         with self.assertRaisesRegex(DataError, "unsupported_version"):
             self.store.restore(source)
@@ -125,7 +126,7 @@ class StoreTests(unittest.TestCase):
     def test_reject_triggers(self):
         source = self.directory / "trigger.db"
         self.store.backup(source)
-        with sqlite3.connect(source) as conn:
+        with closing(sqlite3.connect(source)) as conn, conn:
             conn.execute("CREATE TRIGGER injected AFTER INSERT ON perfiles BEGIN DELETE FROM productos; END")
         with self.assertRaises(DataError):
             self.store.restore(source)
@@ -133,7 +134,7 @@ class StoreTests(unittest.TestCase):
     def test_reject_orphan_even_without_fk_declaration(self):
         source = self.directory / "orphan.db"
         self.store.backup(source)
-        with sqlite3.connect(source) as conn:
+        with closing(sqlite3.connect(source)) as conn, conn:
             conn.execute("PRAGMA foreign_keys=OFF")
             conn.execute("INSERT INTO productos(perfil_id,tipo,nombre,cantidad) VALUES (99,'Medicamento','Ficticio','Texto')")
         with self.assertRaises(DataError):
